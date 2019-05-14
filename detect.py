@@ -22,12 +22,12 @@ from matplotlib.ticker import NullLocator
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_folder', type=str, default='data/samples', help='path to dataset')
 parser.add_argument('--config_path', type=str, default='config/yolov3.cfg', help='path to model config file')
-parser.add_argument('--weights_path', type=str, default='weights/yolov3.weights', help='path to weights file')
+parser.add_argument('--weights_path', type=str, default='/home/hh/deeplearning_daily/darknet_src/darknet/yolov3.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
 parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
-parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
+parser.add_argument('--n_cpu', type=int, default=1, help='number of cpu threads to use during batch generation')
 parser.add_argument('--img_size', type=int, default=416, help='size of each image dimension')
 parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use cuda if available')
 opt = parser.parse_args()
@@ -39,7 +39,7 @@ os.makedirs('output', exist_ok=True)
 
 # Set up model
 model = Darknet(opt.config_path, img_size=opt.img_size)
-model.load_weights(opt.weights_path)
+model.load_darknet_weights(opt.weights_path)
 
 if cuda:
     model.cuda()
@@ -47,7 +47,7 @@ if cuda:
 model.eval() # Set in evaluation mode
 
 dataloader = DataLoader(ImageFolder(opt.image_folder, img_size=opt.img_size),
-                        batch_size=opt.batch_size, shuffle=False, num_workers=opt.n_cpu)
+                        batch_size=opt.batch_size, shuffle=False,)##num_workers=opt.n_cpu
 
 classes = load_classes(opt.class_path) # Extracts class labels from file
 

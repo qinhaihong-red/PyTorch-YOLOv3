@@ -45,7 +45,7 @@ data_config = parse_data_config(opt.data_config_path)
 train_path = data_config["train"]
 
 # Get hyper parameters
-hyperparams = parse_model_config(opt.model_config_path)[0]
+hyperparams = parse_model_config(opt.model_config_path)[0] #首项是net-info
 learning_rate = float(hyperparams["learning_rate"])
 momentum = float(hyperparams["momentum"])
 decay = float(hyperparams["decay"])
@@ -75,7 +75,7 @@ for epoch in range(opt.epochs):
 
         optimizer.zero_grad()
 
-        loss = model(imgs, targets)
+        loss = model(imgs, targets)#target(batch,50,5),框坐标形式为 中心-宽高 ，尺度是原图经过pad的尺度，不是416
 
         loss.backward()
         optimizer.step()

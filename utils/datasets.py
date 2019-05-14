@@ -45,6 +45,15 @@ class ImageFolder(Dataset):
     def __len__(self):
         return len(self.files)
 
+#when test ,path to this:/home/hh/dataset/coco/5k.txt
+#original content:
+#/home/hh/dataset/coco/images/val2014/COCO_val2014_000000000164.jpg
+#/home/hh/dataset/coco/images/val2014/COCO_val2014_000000000192.jpg
+
+#when train ,path to this:/home/hh/dataset/coco/trainvalno5k.txt
+#original content:
+#/home/hh/dataset/coco/images/train2014/COCO_train2014_000000000009.jpg
+#/home/hh/dataset/coco/images/train2014/COCO_train2014_000000000025.jpg
 
 class ListDataset(Dataset):
     def __init__(self, list_path, img_size=416):
@@ -63,12 +72,14 @@ class ListDataset(Dataset):
         img_path = self.img_files[index % len(self.img_files)].rstrip()
         img = np.array(Image.open(img_path))
 
-        # Handles images with less than three channels
+        # Handles images with less than three channels 
+        # 这里应该跳过 图片和标签不存在的情况
         while len(img.shape) != 3:
             index += 1
             img_path = self.img_files[index % len(self.img_files)].rstrip()
             img = np.array(Image.open(img_path))
 
+        # 填充图片，再缩放
         h, w, _ = img.shape
         dim_diff = np.abs(h - w)
         # Upper (left) and lower (right) padding
@@ -90,11 +101,13 @@ class ListDataset(Dataset):
         #---------
 
         label_path = self.label_files[index % len(self.img_files)].rstrip()
-
+        #对标签的框坐标同时进行填充修正
         labels = None
         if os.path.exists(label_path):
             labels = np.loadtxt(label_path).reshape(-1, 5)
             # Extract coordinates for unpadded + unscaled image
+            # coco框坐标的表示：[框中心x,框中心y,框宽，框高]，再除以原始图像的宽高进行尺度缩放
+            # 因此这里逆向进行这个过程
             x1 = w * (labels[:, 1] - labels[:, 3]/2)
             y1 = h * (labels[:, 2] - labels[:, 4]/2)
             x2 = w * (labels[:, 1] + labels[:, 3]/2)
@@ -105,6 +118,7 @@ class ListDataset(Dataset):
             x2 += pad[1][0]
             y2 += pad[0][0]
             # Calculate ratios from coordinates
+            # 把修正过的框坐标，再按 [中心-宽高] 的形式变换回去，注意缩放比例是padded_w/h，而不是resize后的416. 因此求IOU的时候，要乘416.
             labels[:, 1] = ((x1 + x2) / 2) / padded_w
             labels[:, 2] = ((y1 + y2) / 2) / padded_h
             labels[:, 3] *= w / padded_w
@@ -115,7 +129,7 @@ class ListDataset(Dataset):
             filled_labels[range(len(labels))[:self.max_objects]] = labels[:self.max_objects]
         filled_labels = torch.from_numpy(filled_labels)
 
-        return img_path, input_img, filled_labels
+        return img_path, input_img, filled_labels#,(3,416,416),(50,5)
 
     def __len__(self):
         return len(self.img_files)
