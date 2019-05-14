@@ -5,6 +5,9 @@ from utils.logger import *
 from utils.utils import *
 from utils.datasets import *
 from utils.parse_config import *
+from test import evaluate
+
+from terminaltables import AsciiTable
 
 import os
 import sys
@@ -97,17 +100,20 @@ for epoch in range(opt.epochs):
                 model.losses["recall"],
                 model.losses["precision"],
             )
-        )
+            evaluation_metrics = [
+                ("val_precision", precision.mean()),
+                ("val_recall", recall.mean()),
+                ("val_mAP", AP.mean()),
+                ("val_f1", f1.mean()),
+            ]
+            logger.list_of_scalars_summary(evaluation_metrics, epoch)
 
-        batches_done = len(dataloader) * epoch + batch_i
+            # Print class APs and mAP
+            ap_table = [["Index", "Class name", "AP"]]
+            for i, c in enumerate(ap_class):
+                ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
+            print(AsciiTable(ap_table).table)
+            print(f"---- mAP {AP.mean()}")
 
-        # Tensorboard logging
-        for loss_name, loss in model.losses.items():
-            logger.scalar_summary(loss_name, loss, batches_done)
-
-        model.seen += imgs.size(0)
-
-        torch.cuda.empty_cache()
-
-    if epoch % opt.checkpoint_interval == 0:
-        torch.save(model.state_dict(), f"checkpoints/%d.pth")
+        if epoch % opt.checkpoint_interval == 0:
+            torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_%d.pth" % epoch)

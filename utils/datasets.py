@@ -1,46 +1,56 @@
 import glob
 import random
 import os
+import sys
 import numpy as np
-
-import torch
-
-from torch.utils.data import Dataset
 from PIL import Image
+import torch
+import torch.nn.functional as F
+
+from utils.augmentations import horisontal_flip
+from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 
-from skimage.transform import resize
+def pad_to_square(img, pad_value):
+    c, h, w = img.shape
+    dim_diff = np.abs(h - w)
+    # (upper / left) padding and (lower / right) padding
+    pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
+    # Determine padding
+    pad = (0, 0, pad1, pad2) if h <= w else (pad1, pad2, 0, 0)
+    # Add padding
+    img = F.pad(img, pad, "constant", value=pad_value)
 
-import sys
+    return img, pad
+
+
+def resize(image, size):
+    image = F.interpolate(image.unsqueeze(0), size=size, mode="nearest").squeeze(0)
+    return image
+
+
+def random_resize(images, min_size=288, max_size=448):
+    new_size = random.sample(list(range(min_size, max_size + 1, 32)), 1)[0]
+    images = F.interpolate(images, size=new_size, mode="nearest")
+    return images
+
 
 class ImageFolder(Dataset):
     def __init__(self, folder_path, img_size=416):
-        self.files = sorted(glob.glob('%s/*.*' % folder_path))
-        self.img_shape = (img_size, img_size)
+        self.files = sorted(glob.glob("%s/*.*" % folder_path))
+        self.img_size = img_size
 
     def __getitem__(self, index):
         img_path = self.files[index % len(self.files)]
-        # Extract image
-        img = np.array(Image.open(img_path))
-        h, w, _ = img.shape
-        dim_diff = np.abs(h - w)
-        # Upper (left) and lower (right) padding
-        pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
-        # Determine padding
-        pad = ((pad1, pad2), (0, 0), (0, 0)) if h <= w else ((0, 0), (pad1, pad2), (0, 0))
-        # Add padding
-        input_img = np.pad(img, pad, 'constant', constant_values=127.5) / 255.
-        # Resize and normalize
-        input_img = resize(input_img, (*self.img_shape, 3), mode='reflect')
-        # Channels-first
-        input_img = np.transpose(input_img, (2, 0, 1))
-        # As pytorch tensor
-        input_img = torch.from_numpy(input_img).float()
+        # Extract image as PyTorch tensor
+        img = transforms.ToTensor()(Image.open(img_path))
+        # Pad to square resolution
+        img, _ = pad_to_square(img, 0)
+        # Resize
+        img = resize(img, self.img_size)
 
-        return img_path, input_img
+        return img_path, img
 
     def __len__(self):
         return len(self.files)
@@ -56,18 +66,28 @@ class ImageFolder(Dataset):
 #/home/hh/dataset/coco/images/train2014/COCO_train2014_000000000025.jpg
 
 class ListDataset(Dataset):
-    def __init__(self, list_path, img_size=416):
-        with open(list_path, 'r') as file:
+    def __init__(self, list_path, img_size=416, augment=True, multiscale=True, normalized_labels=True):
+        with open(list_path, "r") as file:
             self.img_files = file.readlines()
-        self.label_files = [path.replace('images', 'labels').replace('.png', '.txt').replace('.jpg', '.txt') for path in self.img_files]
-        self.img_shape = (img_size, img_size)
-        self.max_objects = 50
+
+        self.label_files = [
+            path.replace("images", "labels").replace(".png", ".txt").replace(".jpg", ".txt")
+            for path in self.img_files
+        ]
+        self.img_size = img_size
+        self.max_objects = 100
+        self.augment = augment
+        self.multiscale = multiscale
+        self.normalized_labels = normalized_labels
+        self.min_size = self.img_size - 3 * 32
+        self.max_size = self.img_size + 3 * 32
+        self.batch_count = 0
 
     def __getitem__(self, index):
 
-        #---------
+        # ---------
         #  Image
-        #---------
+        # ---------
 
         img_path = self.img_files[index % len(self.img_files)].rstrip()
         img = np.array(Image.open(img_path))
@@ -98,13 +118,13 @@ class ListDataset(Dataset):
 
         #---------
         #  Label
-        #---------
+        # ---------
 
         label_path = self.label_files[index % len(self.img_files)].rstrip()
         #对标签的框坐标同时进行填充修正
         labels = None
         if os.path.exists(label_path):
-            labels = np.loadtxt(label_path).reshape(-1, 5)
+            boxes = torch.from_numpy(np.loadtxt(label_path).reshape(-1, 5))
             # Extract coordinates for unpadded + unscaled image
             # coco框坐标的表示：[框中心x,框中心y,框宽，框高]，再除以原始图像的宽高进行尺度缩放
             # 因此这里逆向进行这个过程
